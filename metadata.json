@@ -1,0 +1,6 @@
+{
+  "name": "STCLRC Faculty Feedback & Tracking Portal",
+  "description": "Timed trainee evaluation portal for 920 trainees across 27 teachers and 12 papers, with real-time admin analytics and session completion notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
