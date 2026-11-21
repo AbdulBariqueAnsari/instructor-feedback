@@ -65,6 +65,18 @@ export const DEFAULT_QUESTIONS: QuestionItem[] = [
     active: true,
     order: 4,
   },
+  {
+    id: 'behavior',
+    label: 'Instructor Behavior & Conduct',
+    labelBn: 'প্রশিক্ষকের আচরণ ও ব্যবহার',
+    labelHi: 'प्रशिक्षक का व्यवहार एवं आचरण',
+    shortLabel: 'Behavior',
+    description: 'Treats trainees with respect, patience, fairness, and professional courtesy inside and outside class.',
+    descriptionBn: 'ক্লাসের ভিতরে ও বাইরে প্রশিক্ষণার্থীদের সাথে সম্মান, ধৈর্য, নিরপেক্ষতা ও পেশাদার সৌজন্যের সাথে আচরণ করেন।',
+    descriptionHi: 'कक्षा के अंदर और बाहर प्रशिक्षुओं के साथ सम्मान, धैर्य, निष्पक्षता और पेशेवर शिष्टाचार का व्यवहार करते हैं।',
+    active: true,
+    order: 5,
+  },
 ];
 
 export const PAPERS: PaperInfo[] = [

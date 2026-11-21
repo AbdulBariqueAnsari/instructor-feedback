@@ -39,6 +39,7 @@ export interface TeacherRatingInput {
   delivery?: number;
   engagement?: number;
   discipline?: number;
+  behavior?: number;
   comment: string;
 }
 

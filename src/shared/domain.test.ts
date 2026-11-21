@@ -77,6 +77,11 @@ test('trainee IDs cover STCLRC0001 to STCLRC0920 with 4-digit leading zeros', ()
 });
 
 test('evaluation completeness validation supports custom dynamic questions', () => {
+  assert.equal(DEFAULT_QUESTIONS.length, 5);
+  const behaviorQ = DEFAULT_QUESTIONS.find((q) => q.id === 'behavior');
+  assert.ok(behaviorQ, 'behavior default question must exist');
+  assert.ok(behaviorQ.labelBn && behaviorQ.labelHi, 'behavior question must include Bengali & Hindi translations');
+
   const customQuestions: QuestionItem[] = [
     ...DEFAULT_QUESTIONS,
     {
@@ -85,19 +90,19 @@ test('evaluation completeness validation supports custom dynamic questions', () 
       shortLabel: 'Case Study',
       description: 'Uses practical cases.',
       active: true,
-      order: 5,
+      order: 6,
     },
   ];
 
   const partial: EvaluationMap = {
     'TCH-01': {
       teacherId: 'TCH-01',
-      ratings: {clarity: 5, delivery: 4, engagement: 5, discipline: 4, q_custom_1: 5},
+      ratings: {clarity: 5, delivery: 4, engagement: 5, discipline: 4, behavior: 5, q_custom_1: 5},
       comment: 'Clear',
     },
     'TCH-02': {
       teacherId: 'TCH-02',
-      ratings: {clarity: 4, delivery: 4, engagement: 4, discipline: 4}, // missing q_custom_1
+      ratings: {clarity: 4, delivery: 4, engagement: 4, discipline: 4, behavior: 4}, // missing q_custom_1
       comment: '',
     },
   };
@@ -111,7 +116,7 @@ test('evaluation completeness validation supports custom dynamic questions', () 
   for (const teacher of DEFAULT_TEACHERS) {
     full[teacher.id] = {
       teacherId: teacher.id,
-      ratings: {clarity: 4, delivery: 5, engagement: 4, discipline: 5, q_custom_1: 4},
+      ratings: {clarity: 4, delivery: 5, engagement: 4, discipline: 5, behavior: 5, q_custom_1: 4},
       comment: 'Solid session',
     };
   }
@@ -130,6 +135,7 @@ test('teacher and paper performance calculations compute accurate averages and r
       delivery: isTop ? 5 : 3,
       engagement: isTop ? 5 : 3,
       discipline: isTop ? 5 : 3,
+      behavior: isTop ? 5 : 3,
       comment: isTop ? 'Outstanding' : '',
     };
     evalB[teacher.id] = {
@@ -138,6 +144,7 @@ test('teacher and paper performance calculations compute accurate averages and r
       delivery: isTop ? 4 : 3,
       engagement: isTop ? 4 : 3,
       discipline: isTop ? 4 : 3,
+      behavior: isTop ? 4 : 3,
       comment: '',
     };
   }

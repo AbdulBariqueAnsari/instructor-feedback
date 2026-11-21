@@ -25,9 +25,11 @@ export interface PasswordStore {
 }
 
 const OFFICIAL_ROSTER_VERSION = 2;
+const OFFICIAL_QUESTIONS_VERSION = 2;
 
 export interface PortalDatabase {
   rosterVersion?: number;
+  questionsVersion?: number;
   sessionSecret?: string;
   session: SessionConfig;
   teachers: Teacher[];
@@ -190,10 +192,11 @@ function createInitialDatabase(): PortalDatabase {
       const delivery = clampScore(base + jitter());
       const engagement = clampScore(base + jitter());
       const discipline = clampScore(base + 0.15 + jitter() * 0.8);
+      const behavior = clampScore(base + 0.1 + jitter() * 0.85);
 
       let comment = '';
       if (rng() < 0.16) {
-        const avg = (clarity + delivery + engagement + discipline) / 4;
+        const avg = (clarity + delivery + engagement + discipline + behavior) / 5;
         if (avg >= 4.2) {
           comment = SAMPLE_COMMENTS_HIGH[Math.floor(rng() * SAMPLE_COMMENTS_HIGH.length)];
         } else if (avg >= 3.4) {
@@ -205,11 +208,12 @@ function createInitialDatabase(): PortalDatabase {
 
       evaluations[teacher.id] = {
         teacherId: teacher.id,
-        ratings: {clarity, delivery, engagement, discipline},
+        ratings: {clarity, delivery, engagement, discipline, behavior},
         clarity,
         delivery,
         engagement,
         discipline,
+        behavior,
         comment,
       };
     }
@@ -239,11 +243,12 @@ function createInitialDatabase(): PortalDatabase {
       const teacher = teachers[i];
       partial[teacher.id] = {
         teacherId: teacher.id,
-        ratings: {clarity: 4, delivery: 4, engagement: 4, discipline: 5},
+        ratings: {clarity: 4, delivery: 4, engagement: 4, discipline: 5, behavior: 5},
         clarity: 4,
         delivery: 4,
         engagement: 4,
         discipline: 5,
+        behavior: 5,
         comment: '',
       };
     }
@@ -289,6 +294,7 @@ function createInitialDatabase(): PortalDatabase {
 
   return {
     rosterVersion: OFFICIAL_ROSTER_VERSION,
+    questionsVersion: OFFICIAL_QUESTIONS_VERSION,
     sessionSecret: crypto.randomBytes(32).toString('hex'),
     session,
     teachers,
@@ -339,6 +345,38 @@ class StoreManager {
               }
               return updated;
             });
+          }
+
+          if (parsed.questionsVersion !== OFFICIAL_QUESTIONS_VERSION) {
+            const hasBehavior = parsed.questions.some((q) => q.id === 'behavior');
+            const defaultBehavior = DEFAULT_QUESTIONS.find((q) => q.id === 'behavior');
+            if (!hasBehavior && defaultBehavior) {
+              parsed.questions.push({
+                ...defaultBehavior,
+                order: parsed.questions.length + 1,
+              });
+            }
+            for (const sub of Object.values(parsed.submissions)) {
+              if (sub.status !== 'submitted' && sub.status !== 'draft') continue;
+              for (const ev of Object.values(sub.evaluations)) {
+                if (!ev) continue;
+                const existing = ev.ratings?.behavior ?? ev.behavior;
+                if (typeof existing === 'number' && existing >= 1 && existing <= 5) continue;
+                const nums = [
+                  ev.ratings?.clarity ?? ev.clarity,
+                  ev.ratings?.delivery ?? ev.delivery,
+                  ev.ratings?.engagement ?? ev.engagement,
+                  ev.ratings?.discipline ?? ev.discipline,
+                ].filter((n): n is number => typeof n === 'number' && n >= 1 && n <= 5);
+                if (nums.length > 0) {
+                  const avg = clampScore(nums.reduce((a, b) => a + b, 0) / nums.length);
+                  ev.ratings = {...(ev.ratings ?? {}), behavior: avg};
+                  ev.behavior = avg;
+                }
+              }
+            }
+            parsed.questionsVersion = OFFICIAL_QUESTIONS_VERSION;
+            needsPersist = true;
           }
           const defaultById = new Map(DEFAULT_TEACHERS.map((t) => [t.id, t]));
 
