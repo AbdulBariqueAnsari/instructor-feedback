@@ -33,12 +33,53 @@ const ADMIN_ID = 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const COOKIE_NAME = 'stclrc_sid';
 
-interface ActiveToken {
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const revokedTokens = new Set<string>();
+
+interface SignedTokenPayload {
   user: AuthSessionUser;
-  createdAt: number;
+  exp: number;
+  jti: string;
 }
 
-const activeTokens = new Map<string, ActiveToken>();
+function issueSessionToken(user: AuthSessionUser): string {
+  const payload: SignedTokenPayload = {
+    user,
+    exp: Date.now() + TOKEN_TTL_MS,
+    jti: crypto.randomBytes(12).toString('hex'),
+  };
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', store.getSessionSecret())
+    .update(encoded)
+    .digest('base64url');
+  return `${encoded}.${sig}`;
+}
+
+function verifySessionToken(token: string): AuthSessionUser | null {
+  if (!token || revokedTokens.has(token)) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [encoded, sig] = parts;
+  const expected = crypto
+    .createHmac('sha256', store.getSessionSecret())
+    .update(encoded)
+    .digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expected);
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8')) as SignedTokenPayload;
+    if (!parsed?.user || typeof parsed.exp !== 'number' || Date.now() > parsed.exp) {
+      return null;
+    }
+    return parsed.user;
+  } catch {
+    return null;
+  }
+}
 
 function parseCookies(header: string | undefined): Record<string, string> {
   const result: Record<string, string> = {};
@@ -57,15 +98,15 @@ function getAuthenticatedUser(req: express.Request): AuthSessionUser | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7).trim();
-    const entry = activeTokens.get(token);
-    if (entry) return entry.user;
+    const user = verifySessionToken(token);
+    if (user) return user;
   }
 
   const cookies = parseCookies(req.headers.cookie);
   const cookieToken = cookies[COOKIE_NAME];
   if (cookieToken) {
-    const entry = activeTokens.get(cookieToken);
-    if (entry) return entry.user;
+    const user = verifySessionToken(cookieToken);
+    if (user) return user;
   }
   return null;
 }
@@ -186,13 +227,12 @@ async function startServer() {
         return;
       }
 
-      const token = crypto.randomBytes(24).toString('hex');
       const user: AuthSessionUser = {
         role: 'admin',
         id: 'ADMIN',
         displayName: 'STCLRC Administrator',
       };
-      activeTokens.set(token, {user, createdAt: Date.now()});
+      const token = issueSessionToken(user);
       res.cookie(COOKIE_NAME, token, {httpOnly: true, sameSite: 'lax', path: '/'});
       res.json({user, token});
       return;
@@ -212,14 +252,13 @@ async function startServer() {
       return;
     }
 
-    const token = crypto.randomBytes(24).toString('hex');
     const user: AuthSessionUser = {
       role: 'trainee',
       id: formattedId,
       displayName: `Trainee Chest #${String(chestNumber).padStart(4, '0')}`,
       chestNumber,
     };
-    activeTokens.set(token, {user, createdAt: Date.now()});
+    const token = issueSessionToken(user);
     res.cookie(COOKIE_NAME, token, {httpOnly: true, sameSite: 'lax', path: '/'});
     res.json({user, token});
   });
@@ -228,7 +267,7 @@ async function startServer() {
   app.post('/api/auth/change-password', (req, res) => {
     const user = getAuthenticatedUser(req);
     if (!user) {
-      res.status(401).json({error: 'Authentication required. Please sign in.'});
+      res.status(401).json({error: 'Session expired. Please sign in again and retry.'});
       return;
     }
 
@@ -240,12 +279,16 @@ async function startServer() {
       res.status(400).json({error: 'Current password, new password, and confirmation are required.'});
       return;
     }
-    if (newPassword.length < 6) {
-      res.status(400).json({error: 'New password must be at least 6 characters long.'});
+    if (newPassword.length < 4) {
+      res.status(400).json({error: 'New password must be at least 4 characters long.'});
       return;
     }
     if (newPassword !== confirmPassword) {
       res.status(400).json({error: 'New password and confirmation do not match.'});
+      return;
+    }
+    if (newPassword === currentPassword) {
+      res.status(400).json({error: 'New password must be different from your current password.'});
       return;
     }
 
@@ -255,7 +298,13 @@ async function startServer() {
         return;
       }
       store.setAdminPassword(newPassword);
-      res.json({ok: true, message: 'Admin password updated successfully.'});
+      const freshToken = issueSessionToken(user);
+      res.cookie(COOKIE_NAME, freshToken, {httpOnly: true, sameSite: 'lax', path: '/'});
+      res.json({
+        ok: true,
+        token: freshToken,
+        message: 'Admin password updated successfully. Use your new password on your next sign-in.',
+      });
       return;
     }
 
@@ -264,17 +313,23 @@ async function startServer() {
       return;
     }
     store.setTraineePassword(user.id, newPassword);
-    res.json({ok: true, message: `Password updated successfully for ${user.id}.`});
+    const freshToken = issueSessionToken(user);
+    res.cookie(COOKIE_NAME, freshToken, {httpOnly: true, sameSite: 'lax', path: '/'});
+    res.json({
+      ok: true,
+      token: freshToken,
+      message: `Password updated successfully for ${user.id}.`,
+    });
   });
 
   app.post('/api/auth/logout', (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     if (cookies[COOKIE_NAME]) {
-      activeTokens.delete(cookies[COOKIE_NAME]);
+      revokedTokens.add(cookies[COOKIE_NAME]);
     }
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
-      activeTokens.delete(authHeader.slice(7).trim());
+      revokedTokens.add(authHeader.slice(7).trim());
     }
     res.clearCookie(COOKIE_NAME, {path: '/'});
     res.json({ok: true});

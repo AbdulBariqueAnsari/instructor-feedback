@@ -28,6 +28,7 @@ const OFFICIAL_ROSTER_VERSION = 2;
 
 export interface PortalDatabase {
   rosterVersion?: number;
+  sessionSecret?: string;
   session: SessionConfig;
   teachers: Teacher[];
   questions: QuestionItem[];
@@ -53,16 +54,25 @@ function verifyPasswordHash(plain: string, storedHash: string): boolean {
 }
 
 function resolveDataDir(): string {
-  const preferred = path.resolve(process.cwd(), 'data');
-  try {
-    fs.mkdirSync(preferred, {recursive: true});
-    fs.accessSync(preferred, fs.constants.W_OK);
-    return preferred;
-  } catch {
-    const fallback = path.join(os.tmpdir(), 'stclrc-portal-data');
-    fs.mkdirSync(fallback, {recursive: true});
-    return fallback;
+  const candidates = [
+    process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : null,
+    path.resolve(process.cwd(), 'data'),
+    path.join(os.tmpdir(), 'stclrc-portal-data'),
+  ].filter((p): p is string => Boolean(p));
+
+  for (const dir of candidates) {
+    try {
+      fs.mkdirSync(dir, {recursive: true});
+      fs.accessSync(dir, fs.constants.W_OK);
+      return dir;
+    } catch {
+      // try next candidate
+    }
   }
+
+  const fallback = path.join(os.tmpdir(), 'stclrc-portal-data');
+  fs.mkdirSync(fallback, {recursive: true});
+  return fallback;
 }
 
 const DATA_DIR = resolveDataDir();
@@ -279,11 +289,13 @@ function createInitialDatabase(): PortalDatabase {
 
   return {
     rosterVersion: OFFICIAL_ROSTER_VERSION,
+    sessionSecret: crypto.randomBytes(32).toString('hex'),
     session,
     teachers,
     questions,
     submissions,
     notifications,
+    passwords: {traineeHashes: {}},
   };
 }
 
@@ -349,6 +361,11 @@ class StoreManager {
 
           if (!parsed.passwords) {
             parsed.passwords = {traineeHashes: {}};
+            needsPersist = true;
+          }
+          if (!parsed.sessionSecret) {
+            parsed.sessionSecret = crypto.randomBytes(32).toString('hex');
+            needsPersist = true;
           }
           if (needsPersist) {
             this.persist(parsed);
@@ -366,11 +383,21 @@ class StoreManager {
   }
 
   private persist(target: PortalDatabase = this.db): void {
+    const payload = JSON.stringify(target);
     try {
       fs.mkdirSync(DATA_DIR, {recursive: true});
       const tempFile = `${DB_FILE}.tmp`;
-      fs.writeFileSync(tempFile, JSON.stringify(target), 'utf-8');
-      fs.renameSync(tempFile, DB_FILE);
+      fs.writeFileSync(tempFile, payload, 'utf-8');
+      try {
+        fs.renameSync(tempFile, DB_FILE);
+      } catch {
+        fs.writeFileSync(DB_FILE, payload, 'utf-8');
+        try {
+          fs.unlinkSync(tempFile);
+        } catch {
+          // ignore cleanup error
+        }
+      }
     } catch (err) {
       console.error('Warning: failed to persist portal DB to disk:', err);
     }
@@ -379,6 +406,17 @@ class StoreManager {
   getDb(): PortalDatabase {
     this.checkAutoSessionCompletion();
     return this.db;
+  }
+
+  getSessionSecret(): string {
+    if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.trim().length >= 16) {
+      return process.env.SESSION_SECRET.trim();
+    }
+    if (!this.db.sessionSecret) {
+      this.db.sessionSecret = crypto.randomBytes(32).toString('hex');
+      this.save();
+    }
+    return this.db.sessionSecret;
   }
 
   save(): void {

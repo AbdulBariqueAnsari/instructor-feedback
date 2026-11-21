@@ -26,6 +26,15 @@ npm run build
 npm start
 ```
 
+## Deploy on Render.com (Blueprint)
+
+This repository includes a `render.yaml` Blueprint configured for Node 22 (`NODE_VERSION=22.18.0`), Kolkata Standard Time (`TZ=Asia/Kolkata`), automatic `SESSION_SECRET` generation, and `/api/health` health checks.
+
+1. Push this repository to GitHub.
+2. In the [Render Dashboard](https://dashboard.render.com/), click **New → Blueprint** and connect your GitHub repository.
+3. Review the `stclrc-feedback-tracker` web service defined in `render.yaml` and click **Apply**.
+4. **Persistent Storage (Recommended for Production)**: Render's `free` plan uses an ephemeral filesystem, which resets `data/portal-db.json` (including changed passwords and submitted feedback) whenever the free service spins down or redeploys. To keep changed Admin/Trainee passwords and feedback data permanently across restarts and deploys, switch `plan: free` to `plan: starter` and uncomment `DATA_DIR: /var/data` and the `disk:` block in `render.yaml`.
+
 ## Scripts
 
 - `npm run dev` — Run Express + Vite middleware dev server (`tsx server.ts`)

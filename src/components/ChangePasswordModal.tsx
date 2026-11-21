@@ -1,6 +1,6 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {CheckCircle2, Eye, EyeOff, KeyRound, X} from 'lucide-react';
-import {apiFetch} from '../utils/api';
+import {apiFetch, setStoredToken} from '../utils/api';
 
 interface ChangePasswordModalProps {
   open: boolean;
@@ -22,6 +22,17 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (open) {
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setError(null);
+      setSuccess(null);
+      setSubmitting(false);
+    }
+  }, [open]);
+
   if (!open) return null;
 
   const resetAndClose = () => {
@@ -42,8 +53,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       setError('Please fill in all password fields.');
       return;
     }
-    if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters long.');
+    if (newPassword.length < 4) {
+      setError('New password must be at least 4 characters long.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -57,14 +68,20 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     setSubmitting(true);
     try {
-      const res = await apiFetch<{ok: boolean; message: string}>('/api/auth/change-password', {
-        method: 'POST',
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-          confirmPassword,
-        }),
-      });
+      const res = await apiFetch<{ok: boolean; token?: string; message: string}>(
+        '/api/auth/change-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            currentPassword,
+            newPassword,
+            confirmPassword,
+          }),
+        },
+      );
+      if (res.token) {
+        setStoredToken(res.token);
+      }
       setSuccess(res.message || 'Password updated successfully.');
       setCurrentPassword('');
       setNewPassword('');
@@ -138,7 +155,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
+                placeholder="Minimum 4 characters"
                 className="w-full px-3.5 py-2 pr-10 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700/20 focus:border-blue-700"
               />
               <button

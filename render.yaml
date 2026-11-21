@@ -1,0 +1,31 @@
+# Render.com Blueprint Specification
+# Deploy via Render Dashboard -> New -> Blueprint -> Connect this GitHub repository
+services:
+  - type: web
+    name: stclrc-feedback-tracker
+    runtime: node
+    plan: free
+    region: singapore
+    autoDeploy: true
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.18.0"
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Kolkata
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        value: admin123
+      # Optional: To persist trainee feedback & changed passwords across Render restarts/deploys,
+      # switch `plan: free` above to `plan: starter`, uncomment `DATA_DIR` below, and uncomment `disk:`.
+      # - key: DATA_DIR
+      #   value: /var/data
+    # disk:
+    #   name: stclrc-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
